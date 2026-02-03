@@ -2753,7 +2753,7 @@ static int _load_cps(_cps_t *cps, const char *filename, int16_t blanking_level, 
 		}
 		else
 		{
-			fprintf(stderr, "Clock rate: %.3f Hz\n", (double) cps->pixel_rate.num / cps->pixel_rate.den);
+			fprintf(stderr, "Clock rate: %.3f Hz\n", r64_double(cps->pixel_rate));
 		}
 	}
 	fprintf(stderr, "Std: 0x%02X 0x%02X\n", cps->std1, cps->std2);

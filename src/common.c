@@ -206,6 +206,12 @@ r64_t r64_parse(const char *str, const char **endptr)
 	return(a);
 }
 
+double r64_double(r64_t a)
+{
+	/* Convert the rational value a to a double */
+	return((double) a.num / a.den);
+}
+
 cint16_t *sin_cint16(unsigned int length, unsigned int cycles, double level)
 {
 	cint16_t *lut;
