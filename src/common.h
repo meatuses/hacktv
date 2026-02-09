@@ -52,6 +52,8 @@ extern r64_t r64_nearest(r64_t ref, r64_t a, r64_t b);
 extern r64_t r64_parse_decimal(const char *str, const char **endptr);
 extern r64_t r64_parse(const char *str, const char **endptr);
 extern double r64_double(r64_t a);
+extern int r64_would_round(r64_t a, int precision);
+extern char *r64_snprint(char *str, size_t size, r64_t a, int precision, int pad);
 extern cint16_t *sin_cint16(unsigned int length, unsigned int cycles, double level);
 extern double rc_window(double t, double left, double width, double rise);
 extern double rrc(double x, double b, double t);
