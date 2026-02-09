@@ -46,5 +46,8 @@ install:
 clean:
 	rm -f *.o *.d hacktv hacktv.exe
 
+cppcheck:
+	cppcheck -q --error-exitcode=1 --std=c23 --check-level=exhaustive *.c *.h
+
 -include $(OBJS:.o=.d)
 
