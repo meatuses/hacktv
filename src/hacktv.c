@@ -558,7 +558,7 @@ int main(int argc, char *argv[])
 	s.output = NULL;
 	s.mode = "i";
 	s.samplerate = 16000000;
-	s.pixelrate = 0;
+	s.pixelrate = (r64_t) { 0, 0 };
 	s.level = 1.0;
 	s.deviation = -1;
 	s.gamma = -1;
@@ -683,14 +683,12 @@ int main(int argc, char *argv[])
 		
 		case _OPT_PIXELRATE: /* --pixelrate <value> */
 			
-			rn = r64_parse(optarg, NULL);
-			if(rn.den == 0)
+			s.pixelrate = r64_parse(optarg, NULL);
+			if(s.pixelrate.den == 0)
 			{
 				fprintf(stderr, "Invalid pixel rate\n");
 				return(-1);
 			}
-			
-			s.pixelrate = (rn.num + rn.den / 2) / rn.den;
 			
 			break;
 		

@@ -105,9 +105,9 @@ int wss_init(wss_t *s, vid_t *vid, char *mode)
 	
 	s->lut = vbidata_init_step(
 		137, vid->width, level,
-		(double) vid->pixel_rate * 200e-9,
-		(double) vid->pixel_rate * 200e-9,
-		(double) vid->pixel_rate * 11e-6
+		r64_double(vid->pixel_rate) * 200e-9,
+		r64_double(vid->pixel_rate) * 200e-9,
+		r64_double(vid->pixel_rate) * 11e-6
 	);
 	
 	if(!s->lut)
@@ -137,7 +137,7 @@ int wss_init(wss_t *s, vid_t *vid, char *mode)
 	o = _group_bits(s->vbi, 0x00, o, 3);
 	
 	/* Calculate width of line to blank */
-	s->blank_width = round(s->vid->pixel_rate * 42.5e-6);
+	s->blank_width = round(r64_double(s->vid->pixel_rate) * 42.5e-6);
 	
 	return(VID_OK);
 }

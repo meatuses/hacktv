@@ -38,7 +38,7 @@ typedef struct {
 	char *output;
 	char *mode;
 	int samplerate;
-	int pixelrate;
+	r64_t pixelrate;
 	float level;
 	float deviation;
 	float gamma;

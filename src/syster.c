@@ -484,7 +484,7 @@ int _init_common(ng_t *s, vid_t *vid, char *mode, int ecm_type)
 	}
 	
 	/* D11/CNR delay */
-	s->ng_delay = (1 / 4433618.75) * 4 * vid->pixel_rate;
+	s->ng_delay = (1 / 4433618.75) * 4 * r64_double(vid->pixel_rate);
 	
 	/* Date of broadcast */
 	uint16_t d = _get_date(n->date);
@@ -907,3 +907,4 @@ int d11_render_line(vid_t *s, void *arg, int nlines, vid_line_t **lines)
 	
 	return(1);
 }
+

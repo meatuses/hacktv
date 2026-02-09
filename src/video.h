@@ -368,7 +368,7 @@ struct vid_t {
 	int sample_rate;
 	
 	/* Video setup */
-	int pixel_rate;
+	r64_t pixel_rate;
 	
 	int width;
 	int half_width;
@@ -512,7 +512,7 @@ struct vid_t {
 
 extern const vid_configs_t vid_configs[];
 
-extern int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const vid_config_t * const conf);
+extern int vid_init(vid_t *s, unsigned int sample_rate, r64_t pixel_rate, const vid_config_t * const conf);
 extern void vid_free(vid_t *s);
 extern void vid_info(vid_t *s);
 extern size_t vid_get_framebuffer_length(vid_t *s);

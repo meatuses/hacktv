@@ -1070,7 +1070,7 @@ int tt_init(tt_t *s, vid_t *vid, char *path)
 		360, s->vid->width,
 		level,
 		VBIDATA_FILTER_RC, (double) s->vid->width / 444, 0.7,
-		vid->pixel_rate * (12e-6 - (64e-6 / 444 * 12))
+		r64_double(vid->pixel_rate) * (12e-6 - (64e-6 / 444 * 12))
 	);
 	
 	if(!s->lut)

@@ -128,8 +128,8 @@ int sis_init(sis_t *s, const char *sismode, vid_t *vid, uint8_t mode, uint8_t re
 	left = 0.2e-6;
 	rise = 80e-9;
 	width = 4.56e-6;
-	s->blank_left = floor(vid->pixel_rate * (left - rise / 2));
-	s->blank_width = ceil(vid->pixel_rate * (width + rise));
+	s->blank_left = floor(r64_double(vid->pixel_rate) * (left - rise / 2));
+	s->blank_width = ceil(r64_double(vid->pixel_rate) * (width + rise));
 	s->blank_win = malloc(s->blank_width * sizeof(int16_t));
 	s->blank_level = vid->sync_level; /* Blank to the sync level */
 	if(!s->blank_win)
@@ -140,7 +140,7 @@ int sis_init(sis_t *s, const char *sismode, vid_t *vid, uint8_t mode, uint8_t re
 	
 	for(i = s->blank_left; i < s->blank_left + s->blank_width; i++)
 	{
-		double t = 1.0 / vid->pixel_rate * i;
+		double t = 1.0 / r64_double(vid->pixel_rate) * i;
 		s->blank_win[i - s->blank_left] = round(rc_window(t, left, width, rise) * INT16_MAX);
 	}
 	

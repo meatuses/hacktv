@@ -210,9 +210,9 @@ int vc_init(vc_t *s, vid_t *vid, const char *mode, const char *mode2)
 		40,
 		vid->width,
 		round((vid->white_level - vid->black_level) * 1.00),
-		(double) vid->pixel_rate / VC_SAMPLE_RATE * VC_VBI_SAMPLES_PER_BIT,
-		vid->pixel_rate * 375e-9,
-		vid->pixel_rate * 10.86e-6
+		r64_double(vid->pixel_rate) / VC_SAMPLE_RATE * VC_VBI_SAMPLES_PER_BIT,
+		r64_double(vid->pixel_rate) * 375e-9,
+		r64_double(vid->pixel_rate) * 10.86e-6
 	);
 	
 	if(!s->lut)

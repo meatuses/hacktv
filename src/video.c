@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <inttypes.h>
 #include "video.h"
 #include "nicam728.h"
 #include "dance.h"
@@ -2331,6 +2332,22 @@ static void _secam_g(double *g, double f)
 	g[1] = 0.115 * (lq - rq) / d;
 }
 
+static void _r64_fprint(FILE *f, r64_t a, int precision, int pad)
+{
+	char s[256];
+	
+	r64_snprint(s, sizeof(s), a, precision, pad);
+	
+	if(r64_would_round(a, precision))
+	{
+		fprintf(f, "%" PRIu64 "/%" PRIu64 " (~%s)", a.num, a.den, s);
+	}
+	else
+	{
+		fprintf(f, "%s", s);
+	}
+}
+
 static double _dlimit(double v, double min, double max)
 {
 	if(v < min) return(min);
@@ -2338,7 +2355,7 @@ static double _dlimit(double v, double min, double max)
 	return(v);
 }
 
-static int16_t *_burstwin(unsigned int sample_rate, double width, double rise, double level, int *len)
+static int16_t *_burstwin(double sample_rate, double width, double rise, double level, int *len)
 {
 	int16_t *win;
 	double t;
@@ -2362,7 +2379,7 @@ static int16_t *_burstwin(unsigned int sample_rate, double width, double rise, d
 
 /* FM modulator
  * deviation = peak deviation in Hz (+/-) from frequency */
-static int _init_fm_modulator(_mod_fm_t *fm, int sample_rate, double frequency, double deviation, double level)
+static int _init_fm_modulator(_mod_fm_t *fm, double sample_rate, double frequency, double deviation, double level)
 {
 	int r;
 	double d;
@@ -2529,25 +2546,34 @@ static void _free_am_modulator(_mod_am_t *am)
 	/* Nothing */
 }
 
-void _test_sample_rate(const vid_config_t *conf, unsigned int sample_rate)
+void _test_sample_rate(const vid_config_t *conf, r64_t pixel_rate)
 {
-	int m, r;
+	r64_t a;
 	
-	/* Test if the chosen sample rate results in an exact number of
+	/* Test if the chosen pixel rate results in an exact number of
 	 * samples per line. If not, display a warning and show the
 	 * previous and next valid sample rates. */
 	
-	/* Calculate lowest valid sample rate */
-	m = conf->lines * conf->frame_rate.num;
-	m /= r = gcd(m, conf->frame_rate.den);
+	a = r64_div(pixel_rate, conf->frame_rate);
+	a = r64_div(a, (r64_t) { conf->lines, 1 });
+	if(a.den == 1) return;
 	
-	/* Is the chosen sample rate good? */
-	if(sample_rate % m == 0) return;
+	fprintf(stderr, "Warning: Pixel rate ");
+	_r64_fprint(stderr, pixel_rate, 4, 0);
+	fprintf(stderr, " Hz may not work well with this mode.\n");
 	
-	/* Not really. Suggest some good sample rates */
-	r = sample_rate / m;
-	fprintf(stderr, "Warning: Pixel rate %u may not work well with this mode.\n", sample_rate);
-	fprintf(stderr, "Next valid pixel rates: %d, %d\n", m * r, m * (r + 1));
+	a = (r64_t) { a.num / a.den, 1 };
+	pixel_rate = r64_mul(r64_mul(a, conf->frame_rate), (r64_t) { conf->lines, 1});
+	
+	fprintf(stderr, "Next valid pixel rates: ");
+	_r64_fprint(stderr, pixel_rate, 4, 0);
+	
+	a.num += 1;
+	pixel_rate = r64_mul(r64_mul(a, conf->frame_rate), (r64_t) { conf->lines, 1});
+	
+	fprintf(stderr, ", ");
+	_r64_fprint(stderr, pixel_rate, 4, 0);
+	fprintf(stderr, "\n");
 }
 
 static int _vid_next_line_rawbb(vid_t *s, void *arg, int nlines, vid_line_t **lines)
@@ -2746,15 +2772,9 @@ static int _load_cps(_cps_t *cps, const char *filename, int16_t blanking_level, 
 	else
 	{
 		cps->pixel_rate = clocks[cps->clock_crystal];
-		
-		if(cps->pixel_rate.den == 1)
-		{
-			fprintf(stderr, "Clock rate: %lu Hz\n", cps->pixel_rate.num);
-		}
-		else
-		{
-			fprintf(stderr, "Clock rate: %.3f Hz\n", r64_double(cps->pixel_rate));
-		}
+		fprintf(stderr, "Clock rate: ");
+		_r64_fprint(stderr, cps->pixel_rate, 4, 0);
+		fprintf(stderr, " Hz\n");
 	}
 	fprintf(stderr, "Std: 0x%02X 0x%02X\n", cps->std1, cps->std2);
 	
@@ -3600,7 +3620,7 @@ static int _vid_render_secam(vid_t *s, void *arg, int nlines, vid_line_t **lines
 		
 		for(x = 0; x < s->width; x++)
 		{
-			double t = (double) (x - s->active_left) / s->pixel_rate / rw;
+			double t = (double) (x - s->active_left) / r64_double(s->pixel_rate) / rw;
 			
 			if(t < 0) t = 0;
 			else if(t > 1) t = 1;
@@ -4255,10 +4275,10 @@ vbidata_lut_t *_render_sync_pulses(vid_t *s, const double syncs[][4], int num)
 	{
 		l += vbidata_update_step(
 			NULL,
-			syncs[i][0] * s->pixel_rate,		/* Offset */
-			syncs[i][1] * s->pixel_rate,		/* Width */
-			syncs[i][2] * IRT1090 * s->pixel_rate,	/* Rise-time */
-			syncs[i][3]				/* Level */
+			syncs[i][0] * r64_double(s->pixel_rate), /* Offset */
+			syncs[i][1] * r64_double(s->pixel_rate), /* Width */
+			syncs[i][2] * IRT1090 * r64_double(s->pixel_rate), /* Rise-time */
+			syncs[i][3] /* Level */
 		);
 	}
 	l += 1;
@@ -4275,10 +4295,10 @@ vbidata_lut_t *_render_sync_pulses(vid_t *s, const double syncs[][4], int num)
 	{
 		vbidata_update_step(
 			lptr,
-			syncs[i][0] * s->pixel_rate,		/* Offset */
-			syncs[i][1] * s->pixel_rate,		/* Width */
-			syncs[i][2] * IRT1090 * s->pixel_rate,	/* Rise-time */
-			syncs[i][3]				/* Level */
+			syncs[i][0] * r64_double(s->pixel_rate), /* Offset */
+			syncs[i][1] * r64_double(s->pixel_rate), /* Width */
+			syncs[i][2] * IRT1090 * r64_double(s->pixel_rate), /* Rise-time */
+			syncs[i][3] /* Level */
 		);
 	}
 	
@@ -4288,7 +4308,7 @@ vbidata_lut_t *_render_sync_pulses(vid_t *s, const double syncs[][4], int num)
 	return(lut);
 }
 
-int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const vid_config_t * const conf)
+int vid_init(vid_t *s, unsigned int sample_rate, r64_t pixel_rate, const vid_config_t * const conf)
 {
 	int r, x;
 	int64_t c;
@@ -4315,20 +4335,20 @@ int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const 
 	if(s->conf.bw_co <= 0) s->conf.bw_co = 0.114; /* B weight */
 	
 	s->sample_rate = sample_rate;
-	s->pixel_rate = pixel_rate ? pixel_rate : sample_rate;
+	s->pixel_rate = pixel_rate.den ? pixel_rate : (r64_t) { sample_rate, 1 };
 	
 	_test_sample_rate(&s->conf, s->pixel_rate);
 	
 	/* Calculate the number of samples per line */
 	width = (double) s->conf.frame_rate.den / s->conf.frame_rate.num / s->conf.lines;
 	
-	s->width = round((double) s->pixel_rate * width);
-	s->half_width = round((double) s->pixel_rate * width / 2);
+	s->width = round(r64_double(s->pixel_rate) * width);
+	s->half_width = round(r64_double(s->pixel_rate) * width / 2);
 	s->max_width = s->width;
 	
 	/* Calculate the active video width and offset */
-	s->active_left = round(s->pixel_rate * s->conf.active_left);
-	s->active_width = ceil(s->pixel_rate * s->conf.active_width);
+	s->active_left = round(r64_double(s->pixel_rate) * s->conf.active_left);
+	s->active_width = ceil(r64_double(s->pixel_rate) * s->conf.active_width);
 	if(s->active_width > s->width) s->active_width = s->width;
 	
 	/* Calculate signal levels */
@@ -4440,7 +4460,7 @@ int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const 
 	if(s->conf.colour_mode == VID_PAL ||
 	   s->conf.colour_mode == VID_NTSC)
 	{
-		r64_t a = r64_div((r64_t) { s->pixel_rate, 1 }, s->conf.colour_carrier);
+		r64_t a = r64_div(s->pixel_rate, s->conf.colour_carrier);
 		
 		/* Generate the colour subcarrier lookup table */
 		/* This carrier is in phase with the U (B-Y) component */
@@ -4479,7 +4499,7 @@ int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const 
 			double *taps;
 			int ntaps;
 			
-			ntaps = fir_gaussian_low_pass_ntaps(s->pixel_rate, s->conf.colour_bw);
+			ntaps = fir_gaussian_low_pass_ntaps(r64_double(s->pixel_rate), s->conf.colour_bw);
 			taps = malloc(sizeof(double) * ntaps);
 			if(!taps)
 			{
@@ -4487,7 +4507,7 @@ int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const 
 				return(VID_OUT_OF_MEMORY);
 			}
 			
-			fir_gaussian_low_pass(taps, ntaps, s->pixel_rate, s->conf.colour_bw, 1);
+			fir_gaussian_low_pass(taps, ntaps, r64_double(s->pixel_rate), s->conf.colour_bw, 1);
 			fir_int16_init(&s->chrominance_fir, taps, ntaps, 1, 1, 0);
 			free(taps);
 		}
@@ -4496,9 +4516,9 @@ int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const 
 	if(s->conf.burst_level > 0)
 	{
 		/* Generate the colour burst envelope */
-		s->burst_left  = round(s->pixel_rate * (s->conf.burst_left - s->conf.burst_rise / 2));
+		s->burst_left  = round(r64_double(s->pixel_rate) * (s->conf.burst_left - s->conf.burst_rise / 2));
 		s->burst_win   = _burstwin(
-			s->pixel_rate,
+			r64_double(s->pixel_rate),
 			s->conf.burst_width,
 			s->conf.burst_rise * IRT1090,
 			s->conf.burst_level * (s->conf.white_level - s->conf.blanking_level) / 2 * level,
@@ -4556,7 +4576,7 @@ int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const 
 		double secam_level = (s->conf.white_level - s->conf.blanking_level) * level;
 		double taps[51];
 		
-		r = _init_fm_modulator(&s->fm_secam, s->pixel_rate, SECAM_FM_FREQ, SECAM_FM_DEV, secam_level);
+		r = _init_fm_modulator(&s->fm_secam, r64_double(s->pixel_rate), SECAM_FM_FREQ, SECAM_FM_DEV, secam_level);
 		if(r != VID_OK)
 		{
 			vid_free(s);
@@ -4573,10 +4593,10 @@ int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const 
 			return(r);
 		}
 		
-		fir_low_pass(taps, 15, s->pixel_rate, 1.70e6, 0.50e6, 1.0);
+		fir_low_pass(taps, 15, r64_double(s->pixel_rate), 1.70e6, 0.50e6, 1.0);
 		fir_int16_init(&s->fm_secam_fir, taps, 15, 1, 1, 0);
 		
-		fir_band_reject(taps, 51, s->pixel_rate, SECAM_FM_FREQ - 1e6, SECAM_FM_FREQ + 1e6, 1e6, 1.0);
+		fir_band_reject(taps, 51, r64_double(s->pixel_rate), SECAM_FM_FREQ - 1e6, SECAM_FM_FREQ + 1e6, 1e6, 1.0);
 		
 		/* A little test to see if a weaker luminance filter can improve
 		 * SECAM image quality without causing interference to colour */
@@ -4616,9 +4636,9 @@ int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const 
 		}
 		
 		/* Generate the colour subcarrier envelope */
-		s->burst_left  = round(s->pixel_rate * (s->conf.burst_left - s->conf.burst_rise / 2));
+		s->burst_left  = round(r64_double(s->pixel_rate) * (s->conf.burst_left - s->conf.burst_rise / 2));
 		s->burst_win   = _burstwin(
-			s->pixel_rate,
+			r64_double(s->pixel_rate),
 			s->conf.burst_width,
 			s->conf.burst_rise * IRT1090,
 			1.0,
@@ -4695,14 +4715,12 @@ int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const 
 		
 		_add_lineprocess(s, "cpsbb", 1, 0, cps, _vid_next_line_cpsbb, _vid_free_cpsbb);
 		
-		if(cps->pixel_rate.den != 0 &&
-		   (cps->pixel_rate.den != 1 ||
-		    cps->pixel_rate.num != s->pixel_rate))
+		if(r64_cmp(cps->pixel_rate, s->pixel_rate) != 0)
 		{
 			fprintf(stderr, "Enabling resampler\n");
 			_init_vresampler(s,
 				cps->pixel_rate,
-				(r64_t) { s->pixel_rate, 1 },
+				s->pixel_rate,
 				s->conf.s_video ? 2 : 1
 			);
 		}
@@ -4876,10 +4894,10 @@ int vid_init(vid_t *s, unsigned int sample_rate, unsigned int pixel_rate, const 
 		}
 	}
 	
-	if(s->pixel_rate != s->sample_rate)
+	if(s->pixel_rate.den != 1 || s->pixel_rate.num != s->sample_rate)
 	{
 		_init_vresampler(s,
-			(r64_t) { s->pixel_rate, 1 },
+			s->pixel_rate,
 			(r64_t) { s->sample_rate, 1 },
 			s->conf.s_video ? 2 : 1
 		);
@@ -5369,12 +5387,14 @@ void vid_info(vid_t *s)
 		s->width, s->conf.lines
 	);
 	
-	if(s->sample_rate != s->pixel_rate)
+	if(s->pixel_rate.den != 1 || s->pixel_rate.num != s->sample_rate)
 	{
-		fprintf(stderr, "Pixel rate: %d\n", s->pixel_rate);
+		fprintf(stderr, "Pixel rate: ");
+		_r64_fprint(stderr, s->pixel_rate, 4, 0);
+		fprintf(stderr, " Hz\n");
 	}
 	
-	fprintf(stderr, "Sample rate: %d\n", s->sample_rate);
+	fprintf(stderr, "Sample rate: %d Hz\n", s->sample_rate);
 }
 
 size_t vid_get_framebuffer_length(vid_t *s)

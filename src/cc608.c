@@ -127,8 +127,8 @@ int cc608_init(cc608_t *s, vid_t *vid)
 		vid->width,
 		level = round((vid->white_level - vid->black_level) * 0.5),
 		(double) vid->width / 32,
-		vid->pixel_rate * 240e-9 * IRT1090,
-		vid->pixel_rate * offset
+		r64_double(vid->pixel_rate) * 240e-9 * IRT1090,
+		r64_double(vid->pixel_rate) * offset
 	);
 	if(!s->lut)
 	{
@@ -137,7 +137,7 @@ int cc608_init(cc608_t *s, vid_t *vid)
 	
 	/* Render the clock run-in */
 	w = (double) vid->width * 7 / 32;
-	x = (double) vid->pixel_rate * offset - (vid->width * 8.75 / 32);
+	x = r64_double(vid->pixel_rate) * offset - (vid->width * 8.75 / 32);
 	
 	s->cri_x = x;
 	s->cri_len = ceil(w);

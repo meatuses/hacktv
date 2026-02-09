@@ -273,3 +273,4 @@ uint64_t encrypt_syster_cw(unsigned char *ecm, unsigned char k64[8], int m)
 	
 	return(controlword);
 }
+
