@@ -1386,8 +1386,8 @@ const vid_config_t vid_config_819_e = {
 	.output_type    = RF_INT16_COMPLEX,
 	
 	.modulation     = VID_VSB,
-	.vsb_upper_bw   =  2000000, /* Hz */
-	.vsb_lower_bw   = 10400000, /* Hz */
+	.vsb_upper_bw   = 10400000, /* Hz */
+	.vsb_lower_bw   =  2000000, /* Hz */
 	
 	.level          = 1.0, /* Overall signal level */
 	.video_level    = 0.8, /* Power level of video */
