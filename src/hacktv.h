@@ -58,6 +58,7 @@ typedef struct {
 	char *syster;
 	char *systercnr;
 	int systeraudio;
+	int d14;
 	char *eurocrypt;
 	int acp;
 	int vits;

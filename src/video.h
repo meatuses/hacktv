@@ -34,6 +34,7 @@ typedef struct vid_t vid_t;
 #include "videocrypt.h"
 #include "videocrypts.h"
 #include "syster.h"
+#include "discret14.h"
 #include "acp.h"
 #include "vits.h"
 #include "vitc.h"
@@ -211,6 +212,7 @@ typedef struct {
 	char *systercnr;
 	char *syster;
 	int systeraudio;
+	int d14;
 	int acp;
 	int vits;
 	int vitc;
@@ -437,7 +439,10 @@ struct vid_t {
 	
 	/* Nagravision Syster state */
 	ng_t ng;
-	
+
+	/* Discret 14 test state */
+	discret14_t discret14;
+
 	/* ACP state */
 	acp_t acp;
 	
