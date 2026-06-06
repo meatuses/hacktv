@@ -3468,7 +3468,7 @@ static int _vid_next_line_raster(vid_t *s, void *arg, int nlines, vid_line_t **l
 		al = (seq[2] == 'a' ? s->active_left : (seq[3] == 'a' ? s->half_width : -1));
 		ar = (seq[3] == 'a' ? s->active_left + s->active_width : (seq[2] == 'a' ? s->half_width : -1));
 		
-		for(x = al, o = &l->output[al * 2]; x < s->active_left + s->vframe_x; x++, o += 2)
+		for(x = al, o = &l->output[al * 2]; x < s->active_left + s->vframe_x && x < ar; x++, o += 2)
 		{
 			*o = s->yuv_level_lookup[0x000000].y;
 		}
