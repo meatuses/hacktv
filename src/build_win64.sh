@@ -12,12 +12,12 @@ cd build_win64
 
 if [[ ! -f $PREFIX/lib/libusb-1.0.a ]]; then
 	
-	if [[ ! -f libusb-1.0.29.tar.bz2 ]]; then
-		wget https://github.com/libusb/libusb/releases/download/v1.0.29/libusb-1.0.29.tar.bz2
-		tar -xvjf libusb-1.0.29.tar.bz2
+	if [[ ! -f libusb-1.0.30.tar.bz2 ]]; then
+		wget https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.tar.bz2
+		tar -xvjf libusb-1.0.30.tar.bz2
 	fi
 	
-	cd libusb-1.0.29
+	cd libusb-1.0.30
 	./configure --host=$HOST --prefix=$PREFIX --enable-static --disable-shared
 	make -j4 install
 	cd ..
@@ -25,14 +25,14 @@ fi
 
 if [[ ! -f $PREFIX/lib/libhackrf.a ]]; then
 	
-	if [[ ! -f hackrf-2024.02.1.tar.xz ]]; then
-		wget https://github.com/greatscottgadgets/hackrf/releases/download/v2024.02.1/hackrf-2024.02.1.tar.xz
-		tar -xvJf hackrf-2024.02.1.tar.xz
+	if [[ ! -f hackrf-2026.01.3.tar.xz ]]; then
+		wget https://github.com/greatscottgadgets/hackrf/releases/download/v2026.01.3/hackrf-2026.01.3.tar.xz
+		tar -xvJf hackrf-2026.01.3.tar.xz
 	fi
 	
-	rm -rf hackrf-2024.02.1/host/libhackrf/build
-	mkdir -p hackrf-2024.02.1/host/libhackrf/build
-	cd hackrf-2024.02.1/host/libhackrf/build
+	rm -rf hackrf-2026.01.3/host/libhackrf/build
+	mkdir -p hackrf-2026.01.3/host/libhackrf/build
+	cd hackrf-2026.01.3/host/libhackrf/build
 	cmake .. \
 		-DCMAKE_SYSTEM_NAME=Windows \
 		-DCMAKE_C_COMPILER=$HOST-gcc \
@@ -125,12 +125,12 @@ fi
 
 if [[ ! -f $PREFIX/lib/libopus.a ]]; then
 	
-	if [[ ! -f opus-1.5.tar.gz ]]; then
-		wget https://downloads.xiph.org/releases/opus/opus-1.5.tar.gz
-		tar -xvzf opus-1.5.tar.gz
+	if [[ ! -f opus-1.6.1.tar.gz ]]; then
+		wget https://downloads.xiph.org/releases/opus/opus-1.6.1.tar.gz
+		tar -xvzf opus-1.6.1.tar.gz
 	fi
 	
-	cd opus-1.5
+	cd opus-1.6.1
 	./configure --host=$HOST --prefix=$PREFIX --enable-static --disable-shared --disable-doc --disable-extra-programs
 	make -j4 install
 	cd ..
