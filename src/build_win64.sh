@@ -54,18 +54,22 @@ if [[ ! -f $PREFIX/lib/libosmo-fl2k.a ]]; then
 		# Rename argc/argv arguments to avoid conflict
 		patch -d osmo-fl2k -Np1 << PATCH
 diff --git a/src/getopt/getopt.h b/src/getopt/getopt.h
-index a1b8dd6..a739d71 100644
+index a1b8dd6..23f6355 100644
 --- a/src/getopt/getopt.h
 +++ b/src/getopt/getopt.h
-@@ -142,23 +142,23 @@ struct option
- /* Many other libraries have conflicting prototypes for getopt, with
-    differences in the consts, in stdlib.h.  To avoid compilation
-    errors, only prototype getopt for the GNU C library.  */
+@@ -138,27 +138,20 @@ struct option
+    \`getopt'.  */
+ 
+ #if (defined __STDC__ && __STDC__) || defined __cplusplus
+-# ifdef __GNU_LIBRARY__
+-/* Many other libraries have conflicting prototypes for getopt, with
+-   differences in the consts, in stdlib.h.  To avoid compilation
+-   errors, only prototype getopt for the GNU C library.  */
 -extern int getopt (int __argc, char *const *__argv, const char *__shortopts);
+-# else /* not __GNU_LIBRARY__ */
+-extern int getopt ();
+-# endif /* __GNU_LIBRARY__ */
 +extern int getopt (int argc, char *const *argv, const char *shortopts);
- # else /* not __GNU_LIBRARY__ */
- extern int getopt ();
- # endif /* __GNU_LIBRARY__ */
  
  # ifndef __need_getopt
 -extern int getopt_long (int __argc, char *const *__argv, const char *__shortopts,
