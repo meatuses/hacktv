@@ -24,9 +24,9 @@
 #include <ctype.h>
 #include "common.h"
 
-int64_t gcd(int64_t a, int64_t b)
+uint64_t gcd(uint64_t a, uint64_t b)
 {
-	int64_t c;
+	uint64_t c;
 	
 	while((c = a % b))
 	{
@@ -53,9 +53,26 @@ static r64_t _normalise(int64_t *num, int64_t *den)
 		*den = -*den;
 	}
 	
-	e = gcd(*num, *den);
+	e = gcd(*num >= 0 ? *num : -*num, *den);
 	
 	return((r64_t) { *num /= e, *den /= e });
+}
+
+r64_t r64_add(r64_t a, r64_t b)
+{
+	int64_t c, d;
+	c = (int64_t) a.num * b.den + (int64_t) a.den * b.num;
+	d = (int64_t) a.den * b.den;
+	return(_normalise(&c, &d));
+}
+
+r64_t r64_sub(r64_t a, r64_t b)
+{
+	int64_t c, d;
+	c = (int64_t) a.num * b.den - (int64_t) a.den * b.num;
+	d = (int64_t) a.den * b.den;
+	//return((r64_t) { c, d });
+	return(_normalise(&c, &d));
 }
 
 r64_t r64_mul(r64_t a, r64_t b)

@@ -44,7 +44,9 @@ typedef struct {
 	int32_t q;
 } cint32_t;
 
-extern int64_t gcd(int64_t a, int64_t b);
+extern uint64_t gcd(uint64_t a, uint64_t b);
+extern r64_t r64_add(r64_t a, r64_t b);
+extern r64_t r64_sub(r64_t a, r64_t b);
 extern r64_t r64_mul(r64_t a, r64_t b);
 extern r64_t r64_div(r64_t a, r64_t b);
 extern int r64_cmp(r64_t a, r64_t b);
