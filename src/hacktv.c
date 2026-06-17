@@ -100,7 +100,7 @@ static void print_usage(void)
 		"      --mac-audio-l1-protection  Use first level protection (D/D2-MAC).\n"
 		"                                 (Default)\n"
 		"      --mac-audio-l2-protection  Use second level protection (D/D2-MAC).\n"
-		"      --sis <mode>               Enable Sound-in-Syncs (dcsis only)\n"
+		"      --sis <mode>               Enable Sound-in-Syncs (dcsis, dsis)\n"
 		"      --swap-iq                  Swap the I and Q channels to invert the spectrum.\n"
 		"                                 Applied before offset and passthru. (Complex modes only).\n"
 		"      --offset <value>           Add a frequency offset in Hz (Complex modes only).\n"

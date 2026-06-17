@@ -19,12 +19,26 @@
 #define _SIS_H
 
 typedef struct {
-	vbidata_lut_t *lut;
-	int16_t audio[NICAM_AUDIO_LEN * 2];
+	
+	int mode;
+	
+	int lut_phase;
+	int lut_phases;
+	vbidata_lut_t **lut;
+	
+	int16_t audio[2][NICAM_AUDIO_LEN * 2];
+	int audio_in;
+	int audio_out;
+	
 	nicam_enc_t nicam;
 	uint8_t frame[NICAM_FRAME_BYTES];
 	int frame_bit;
-	int re;
+	
+	/* Rate throttling */
+	r64_t rt;
+	
+	/* PRNG for DSIS */
+	uint8_t sr;
 	
 	int blank_left;
 	int blank_width;
