@@ -333,21 +333,23 @@ size_t fir_int16_process(fir_int16_t *s, int16_t *out, size_t samples, size_t st
 			s->in_samples--;
 		}
 		
-		for(; s->d < s->interpolation && x < samples; s->d += s->decimation)
+		for(; s->d < s->interpolation && x < samples; s->d += s->decimation, x++)
 		{
-			win = &s->win[s->owin];
-			taps = &s->itaps[s->d * s->ataps];
-			
-			/* Calculate the next output sample */
-			for(a = y = 0; y < s->ataps; y++)
+			if(out)
 			{
-				a += *(win++) * *(taps++);
+				win = &s->win[s->owin];
+				taps = &s->itaps[s->d * s->ataps];
+				
+				/* Calculate the next output sample */
+				for(a = y = 0; y < s->ataps; y++)
+				{
+					a += *(win++) * *(taps++);
+				}
+				
+				a >>= 15;
+				*out = a < INT16_MIN ? INT16_MIN : (a > INT16_MAX ? INT16_MAX : a);
+				out += step;
 			}
-			
-			a >>= 15;
-			*out = a < INT16_MIN ? INT16_MIN : (a > INT16_MAX ? INT16_MAX : a);
-			out += step;
-			x++;
 		}
 	}
 	
@@ -501,25 +503,27 @@ size_t fir_int16_complex_process(fir_int16_t *s, int16_t *out, size_t samples, s
 			s->in_samples--;
 		}
 		
-		for(; s->d < s->interpolation && x < samples; s->d += s->decimation)
+		for(; s->d < s->interpolation && x < samples; s->d += s->decimation, x++)
 		{
-			win = &s->win[s->owin * 2];
-			itaps = &s->itaps[s->d * s->ataps];
-			qtaps = &s->qtaps[s->d * s->ataps];
-			
-			/* Calculate the next output sample */
-			for(ai = aq = y = 0; y < s->ataps; y++, win += 2, itaps++, qtaps++)
+			if(out)
 			{
-				ai += win[0] * *itaps - win[1] * *qtaps;
-				aq += win[0] * *qtaps + win[1] * *itaps;
+				win = &s->win[s->owin * 2];
+				itaps = &s->itaps[s->d * s->ataps];
+				qtaps = &s->qtaps[s->d * s->ataps];
+				
+				/* Calculate the next output sample */
+				for(ai = aq = y = 0; y < s->ataps; y++, win += 2, itaps++, qtaps++)
+				{
+					ai += win[0] * *itaps - win[1] * *qtaps;
+					aq += win[0] * *qtaps + win[1] * *itaps;
+				}
+				
+				ai >>= 15;
+				aq >>= 15;
+				out[0] = ai < INT16_MIN ? INT16_MIN : (ai > INT16_MAX ? INT16_MAX : ai);
+				out[1] = aq < INT16_MIN ? INT16_MIN : (aq > INT16_MAX ? INT16_MAX : aq);
+				out += step;
 			}
-			
-			ai >>= 15;
-			aq >>= 15;
-			out[0] = ai < INT16_MIN ? INT16_MIN : (ai > INT16_MAX ? INT16_MAX : ai);
-			out[1] = aq < INT16_MIN ? INT16_MIN : (aq > INT16_MAX ? INT16_MAX : aq);
-			out += step;
-			x++;
 		}
 	}
 	
@@ -589,25 +593,27 @@ size_t fir_int16_scomplex_process(fir_int16_t *s, int16_t *out, size_t samples, 
 			s->in_samples--;
 		}
 		
-		for(; s->d < s->interpolation && x < samples; s->d += s->decimation)
+		for(; s->d < s->interpolation && x < samples; s->d += s->decimation, x++)
 		{
-			win = &s->win[s->owin];
-			itaps = &s->itaps[s->d * s->ataps];
-			qtaps = &s->qtaps[s->d * s->ataps];
-			
-			/* Calculate the next output sample */
-			for(ai = aq = y = 0; y < s->ataps; y++)
+			if(out)
 			{
-				ai += *win     * *(itaps++);
-				aq += *(win++) * *(qtaps++);
+				win = &s->win[s->owin];
+				itaps = &s->itaps[s->d * s->ataps];
+				qtaps = &s->qtaps[s->d * s->ataps];
+				
+				/* Calculate the next output sample */
+				for(ai = aq = y = 0; y < s->ataps; y++)
+				{
+					ai += *win     * *(itaps++);
+					aq += *(win++) * *(qtaps++);
+				}
+				
+				ai >>= 15;
+				aq >>= 15;
+				out[0] = ai < INT16_MIN ? INT16_MIN : (ai > INT16_MAX ? INT16_MAX : ai);
+				out[1] = aq < INT16_MIN ? INT16_MIN : (aq > INT16_MAX ? INT16_MAX : aq);
+				out += step;
 			}
-			
-			ai >>= 15;
-			aq >>= 15;
-			out[0] = ai < INT16_MIN ? INT16_MIN : (ai > INT16_MAX ? INT16_MAX : ai);
-			out[1] = aq < INT16_MIN ? INT16_MIN : (aq > INT16_MAX ? INT16_MAX : aq);
-			out += step;
-			x++;
 		}
 	}
 	
@@ -669,21 +675,23 @@ size_t fir_int32_process(fir_int32_t *s, int32_t *out, const int32_t *in, size_t
 		if(s->owin < s->ataps) s->win[s->owin + s->lwin] = *in;
 		if(++s->owin == s->lwin) s->owin = 0;
 		
-		for(; s->d < s->interpolation; s->d += s->decimation)
+		for(; s->d < s->interpolation; s->d += s->decimation, x++)
 		{
-			win = &s->win[s->owin];
-			taps = &s->itaps[s->d * s->ataps];
-			
-			/* Calculate the next output sample */
-			for(a = y = 0; y < s->ataps; y++)
+			if(out)
 			{
-				a += (int64_t) *(win++) * (int64_t) *(taps++);
+				win = &s->win[s->owin];
+				taps = &s->itaps[s->d * s->ataps];
+				
+				/* Calculate the next output sample */
+				for(a = y = 0; y < s->ataps; y++)
+				{
+					a += (int64_t) *(win++) * (int64_t) *(taps++);
+				}
+				
+				a >>= 15;
+				*out = a < INT32_MIN ? INT32_MIN : (a > INT32_MAX ? INT32_MAX : a);
+				out += 2;
 			}
-			
-			a >>= 15;
-			*out = a < INT32_MIN ? INT32_MIN : (a > INT32_MAX ? INT32_MAX : a);
-			out += 2;
-			x++;
 		}
 		s->d -= s->interpolation;
 		
