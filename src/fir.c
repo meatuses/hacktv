@@ -359,19 +359,26 @@ size_t fir_int16_process(fir_int16_t *s, int16_t *out, size_t samples, size_t st
 size_t fir_int16_process_block(fir_int16_t *s, int16_t *out, const int16_t *in, size_t samples, int step)
 {
 	int x;
+	const int16_t *r = in + (samples - 1) * step;
 	
-	/* Pre-fill buffer */
-	memset(s->win, 0, (s->lwin + s->ataps) * sizeof(int16_t));
+	/* Reset filter and pre-fill buffer with the first sample */
 	s->owin = 0;
+	s->d = s->interpolation;
+	for(x = 0; x < (s->lwin + s->ataps); x++) s->win[x] = *in;
 	
-	for(s->owin = 0; s->owin < s->ataps / 2; s->owin++, in += step)
-	{
-		s->win[s->owin] = *in;
-		if(s->owin < s->ataps) s->win[s->owin + s->lwin] = *in;
-	}
-	
+	/* Feed in all the samples for the block */
 	fir_int16_feed(s, in, samples, step);
-	x = fir_int16_process(s, out, -1, step);
+	
+	/* Align with the centre (assuming symmetric taps) */
+	fir_int16_process(s, NULL, s->ataps / 2, 0);
+	
+	/* Process the first part */
+	x = fir_int16_process(s, out, samples, step);
+	out += x * step;
+	
+	/* Flush out remaining samples, padding with final sample */
+	fir_int16_feed(s, r, s->lwin, 0);
+	x += fir_int16_process(s, out, samples - x, step);
 	
 	return(x);
 }
