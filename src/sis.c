@@ -102,6 +102,19 @@ int sis_init(sis_t *s, const char *sismode, vid_t *vid, uint8_t mode, uint8_t re
 	
 	if(strcmp(sismode, "dcsis") == 0)
 	{
+		/* Pye TVT / Philips / Varian / Harris DCSIS (Dual Channel Sound in Sync)
+		 * As used by the BBC in the UK
+		 *
+		 * Tested and working with a Varian 625-line decoder. The 525-line variant
+		 * is untested but should be valid. */
+		
+		if(vid->conf.type != VID_RASTER_625 &&
+		   vid->conf.type != VID_RASTER_525)
+		{
+			fprintf(stderr, "DCSIS is only available with 525 and 625 line modes.\n");
+			return(VID_ERROR);
+		}
+		
 		s->mode = 0;
 		
 		/* Render the "quits" - the 4-level symbols */
@@ -137,6 +150,18 @@ int sis_init(sis_t *s, const char *sismode, vid_t *vid, uint8_t mode, uint8_t re
 	else if(strcmp(sismode, "dsis") == 0)
 	{
 		r64_t sr, a, o, m, t;
+		
+		/* RE Communications DSIS (Dual Sound in Sync)
+		 * Used by the IBA (ITV, Channel 4) in the UK, and elsewhere.
+		 *
+		 * As of 2026-06-19 no decoder has been found, so this
+		 * implementation has never been tested on real hardware. */
+		
+		if(vid->conf.type != VID_RASTER_625)
+		{
+			fprintf(stderr, "DSIS is only available with 625 line modes.\n");
+			return(VID_ERROR);
+		}
 		
 		s->mode = 1;
 		
@@ -244,7 +269,7 @@ int _dcsis_render(vid_t *s, void *arg, int nlines, vid_line_t **lines)
 	int16_t audio[NICAM_AUDIO_LEN * 2];
 	
 	/* Target NICAM bitrate - 46.592 bits/line */
-	sis->rt = r64_add(sis->rt, (r64_t) { 5824, 125 });
+	sis->rt = r64_add(sis->rt, r64_div((r64_t) { 728000, s->conf.lines }, s->conf.frame_rate));
 	
 	/* Rate limit by varying the length of the data burst (nb) */
 	nb = 50;
@@ -301,7 +326,7 @@ int _dsis_render(vid_t *s, void *arg, int nlines, vid_line_t **lines)
 	int16_t audio[NICAM_AUDIO_LEN * 2];
 	
 	/* Target NICAM bitrate - 46.592 bits/line */
-	sis->rt = r64_add(sis->rt, (r64_t) { 5824, 125 });
+	sis->rt = r64_add(sis->rt, r64_div((r64_t) { 728000, s->conf.lines }, s->conf.frame_rate));
 	
 	/* The phase is updated every line */
 	if(++sis->lut_phase == sis->lut_phases) sis->lut_phase = 0;

@@ -1444,12 +1444,6 @@ int main(int argc, char *argv[])
 	
 	if(s.sis)
 	{
-		if(vid_conf.lines != 625)
-		{
-			fprintf(stderr, "SiS is only available with 625 line modes.\n");
-			return(-1);
-		}
-		
 		vid_conf.sis = s.sis;
 	}
 	
