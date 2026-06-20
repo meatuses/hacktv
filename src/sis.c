@@ -129,7 +129,7 @@ int sis_init(sis_t *s, const char *sismode, vid_t *vid, uint8_t mode, uint8_t re
 			25, vid->width,
 			round((vid->white_level - vid->black_level)),
 			(double) vid->width / 382,
-			(double) vid->width / 382 * 3.32 /* Measured */
+			(double) vid->width / 382 * 3.12625
 		);
 		if(!s->lut)
 		{
@@ -142,7 +142,7 @@ int sis_init(sis_t *s, const char *sismode, vid_t *vid, uint8_t mode, uint8_t re
 		/* Blanking window parameters - timings measured from captures */
 		left = 0.2e-6;
 		rise = 80e-9;
-		width = 4.56e-6;
+		width = 4.7e-6;
 		
 		/* Init the NICAM encoder */
 		nicam_encode_init(&s->nicam, mode, reserve);
