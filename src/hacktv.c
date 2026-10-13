@@ -53,7 +53,23 @@ static int _tty_raw(void)
 	
 	if(_tio_saved) return(1);
 	
-	if(!isatty(STDIN_FILENO) || tcgetpgrp(STDIN_FILENO) != getpgrp() || tcgetattr(STDIN_FILENO, &_tio) < 0) return(0);
+	if(!isatty(STDIN_FILENO))
+	{
+		fprintf(stderr, "Seek keys disabled: stdin is not a terminal\n");
+		return(0);
+	}
+	
+	if(tcgetpgrp(STDIN_FILENO) != getpgrp())
+	{
+		fprintf(stderr, "Seek keys disabled: not the foreground process group\n");
+		return(0);
+	}
+	
+	if(tcgetattr(STDIN_FILENO, &_tio) < 0)
+	{
+		perror("Seek keys disabled: tcgetattr");
+		return(0);
+	}
 	
 	t = _tio;
 	t.c_lflag &= ~(ICANON | ECHO);
@@ -67,7 +83,7 @@ static int _tty_raw(void)
 	return(1);
 }
 
-/* Arrow keys: left/right = -/+10s, down/up = -/+60s */
+/* Arrow keys: left/right = -/+10s, down/up or PgDn/PgUp = -/+60s */
 static int _tty_seek(void)
 {
 	char b[16];
@@ -85,6 +101,8 @@ static int _tty_seek(void)
 		case 'D': r -= 10; break;
 		case 'A': r += 60; break;
 		case 'B': r -= 60; break;
+		case '5': r += 60; break; /* PgUp */
+		case '6': r -= 60; break; /* PgDn */
 		}
 	}
 	
