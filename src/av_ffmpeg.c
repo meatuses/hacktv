@@ -572,7 +572,17 @@ static void *_input_thread(void *arg)
 		}
 		else if(r < 0)
 		{
-			/* FFmpeg input EOF or error. Break out */
+			/* FFmpeg input EOF or error. The input is read well ahead of
+			 * playback, so wait for the decoders to consume the queues and
+			 * keep serving seeks until then */
+			if(s->seek_seconds == 0 && (s->video_queue.length > 0 || s->audio_queue.length > 0))
+			{
+				av_usleep(10000);
+				continue;
+			}
+			
+			if(s->seek_seconds != 0) continue;
+			
 			break;
 		}
 		
