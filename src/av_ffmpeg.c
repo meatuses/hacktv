@@ -54,6 +54,7 @@
 typedef struct __packet_queue_item_t {
 	
 	AVPacket pkt;
+	int flush;	/* Flush marker: sent after a seek, carries no packet */
 	struct __packet_queue_item_t *next;
 	
 } _packet_queue_item_t;
@@ -132,6 +133,10 @@ typedef struct {
 	volatile int thread_abort;
 	int input_stall;
 	
+	/* Seek request (seconds, relative) and resulting target (AV_TIME_BASE) */
+	volatile int seek_seconds;
+	int64_t seek_target;
+	
 	/* Thread locking and signaling for input queues */
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
@@ -182,15 +187,18 @@ static int _packet_queue_flush(av_ffmpeg_t *s, _packet_queue_t *q)
 	
 	pthread_mutex_lock(&s->mutex);
 	
-	while(q->length--)
+	while(q->length > 0)
 	{
 		/* Pop the first item off the list */
 		p = q->first;
 		q->first = p->next;
+		q->length--;
 		
 		av_packet_unref(&p->pkt);
 		free(p);
 	}
+	
+	q->size = 0;
 	
 	pthread_cond_signal(&s->cond);
 	pthread_mutex_unlock(&s->mutex);
@@ -227,7 +235,7 @@ static int _packet_queue_write(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt
 	else
 	{
 		/* Limit the size of the queue */
-		while(q->abort == 0 && q->size + pkt->size + sizeof(_packet_queue_item_t) > MAX_QUEUE_SIZE)
+		while(q->abort == 0 && s->seek_seconds == 0 && q->size + pkt->size + sizeof(_packet_queue_item_t) > MAX_QUEUE_SIZE)
 		{
 			s->input_stall = 1;
 			pthread_cond_signal(&s->cond);
@@ -247,6 +255,17 @@ static int _packet_queue_write(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt
 			return(-2);
 		}
 		
+		if(s->seek_seconds != 0)
+		{
+			/* A seek is pending, this packet is about to be flushed anyway */
+			av_packet_unref(pkt);
+			
+			pthread_cond_signal(&s->cond);
+			pthread_mutex_unlock(&s->mutex);
+			
+			return(0);
+		}
+		
 		/* Allocate memory for queue item and copy packet */
 		p = malloc(sizeof(_packet_queue_item_t));
 		if(p == NULL)
@@ -261,6 +280,7 @@ static int _packet_queue_write(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt
 		}
 		
 		p->pkt = *pkt;
+		p->flush = 0;
 		p->next = NULL;
 		
 		/* Add the item to the end of the queue */
@@ -284,9 +304,35 @@ static int _packet_queue_write(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt
 	return(0);
 }
 
+static int _packet_queue_write_flush(av_ffmpeg_t *s, _packet_queue_t *q)
+{
+	_packet_queue_item_t *p;
+	
+	p = calloc(1, sizeof(_packet_queue_item_t));
+	if(p == NULL) return(-1);
+	
+	p->flush = 1;
+	
+	pthread_mutex_lock(&s->mutex);
+	
+	if(q->length == 0) q->first = p;
+	else q->last->next = p;
+	
+	q->last = p;
+	q->length++;
+	q->size += sizeof(_packet_queue_item_t);
+	
+	pthread_cond_signal(&s->cond);
+	pthread_mutex_unlock(&s->mutex);
+	
+	return(0);
+}
+
+/* Returns 1 if the item read was a flush marker */
 static int _packet_queue_read(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt)
 {
 	_packet_queue_item_t *p;
+	int r;
 	
 	pthread_mutex_lock(&s->mutex);
 	
@@ -314,12 +360,14 @@ static int _packet_queue_read(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt)
 	q->length--;
 	q->size -= pkt->size + sizeof(_packet_queue_item_t);
 	
+	r = p->flush;
+	
 	free(p);
 	
 	pthread_cond_signal(&s->cond);
 	pthread_mutex_unlock(&s->mutex);
 	
-	return(0);
+	return(r);
 }
 
 static int _frame_dbuffer_init(_frame_dbuffer_t *d)
@@ -399,6 +447,17 @@ static void _frame_dbuffer_ready(_frame_dbuffer_t *d, int repeat)
 	pthread_mutex_unlock(&d->mutex);
 }
 
+/* Pass a flush marker (a frame with a non-NULL opaque) down the pipeline */
+static void _frame_dbuffer_mark(_frame_dbuffer_t *d, void *mark)
+{
+	AVFrame *frame = _frame_dbuffer_back_buffer(d);
+	
+	av_frame_unref(frame);
+	frame->opaque = mark;
+	
+	_frame_dbuffer_ready(d, 0);
+}
+
 static AVFrame *_frame_dbuffer_flip(_frame_dbuffer_t *d)
 {
 	AVFrame *frame;
@@ -436,6 +495,48 @@ static AVFrame *_frame_dbuffer_flip(_frame_dbuffer_t *d)
 	return(frame);
 }
 
+static void _input_seek(av_ffmpeg_t *s)
+{
+	AVStream *ref = s->video_stream ? s->video_stream : s->audio_stream;
+	int64_t pos, min, target;
+	int seconds;
+	
+	pthread_mutex_lock(&s->mutex);
+	seconds = s->seek_seconds;
+	s->seek_seconds = 0;
+	pthread_mutex_unlock(&s->mutex);
+	
+	/* The output clock is the current playback position */
+	if(ref == s->video_stream) pos = av_rescale_q(s->video_start_time, s->video_time_base, AV_TIME_BASE_Q);
+	else pos = av_rescale_q(s->audio_start_time, s->audio_time_base, AV_TIME_BASE_Q);
+	
+	min = ref->start_time != AV_NOPTS_VALUE ? av_rescale_q(ref->start_time, ref->time_base, AV_TIME_BASE_Q) : 0;
+	target = pos + (int64_t) seconds * AV_TIME_BASE;
+	if(target < min) target = min;
+	
+	/* ponytail: lands on the previous keyframe, the scalers then discard
+	 * frames up to the target, so long GOPs stall output until they catch up */
+	if(av_seek_frame(s->format_ctx, ref->index, av_rescale_q(target, AV_TIME_BASE_Q, ref->time_base), AVSEEK_FLAG_BACKWARD) < 0)
+	{
+		/* Not seekable */
+		return;
+	}
+	
+	s->seek_target = target;
+	
+	if(s->video_stream)
+	{
+		_packet_queue_flush(s, &s->video_queue);
+		_packet_queue_write_flush(s, &s->video_queue);
+	}
+	
+	if(s->audio_stream)
+	{
+		_packet_queue_flush(s, &s->audio_queue);
+		_packet_queue_write_flush(s, &s->audio_queue);
+	}
+}
+
 static void *_input_thread(void *arg)
 {
 	av_ffmpeg_t *s = (av_ffmpeg_t *) arg;
@@ -447,6 +548,12 @@ static void *_input_thread(void *arg)
 	/* Fetch packets from the source */
 	while(s->thread_abort == 0)
 	{
+		if(s->seek_seconds != 0)
+		{
+			_input_seek(s);
+			continue;
+		}
+		
 		r = av_read_frame(s->format_ctx, &pkt);
 		
 		if(r == AVERROR(EAGAIN))
@@ -506,6 +613,14 @@ static void *_video_decode_thread(void *arg)
 				break;
 			}
 			
+			if(r == 1)
+			{
+				/* Seek: drop decoder state and tell the scaler */
+				avcodec_flush_buffers(s->video_codec_ctx);
+				_frame_dbuffer_mark(&s->in_video_buffer, s);
+				continue;
+			}
+			
 			ppkt = (r >= 0 ? &pkt : NULL);
 		}
 		
@@ -561,6 +676,14 @@ static void *_video_scaler_thread(void *arg)
 	/* Fetch video frames and pass them through the scaler */
 	while((frame = _frame_dbuffer_flip(&s->in_video_buffer)) != NULL)
 	{
+		if(frame->opaque != NULL)
+		{
+			/* Seek marker: the target is now the current time */
+			s->video_start_time = av_rescale_q(s->seek_target, AV_TIME_BASE_Q, s->video_time_base);
+			av_frame_unref(frame);
+			continue;
+		}
+		
 		pts = frame->best_effort_timestamp;
 		
 		/* Extract EIA-608 caption codes from the frame */
@@ -777,6 +900,14 @@ static void *_audio_decode_thread(void *arg)
 				break;
 			}
 			
+			if(r == 1)
+			{
+				/* Seek: drop decoder state and tell the scaler */
+				avcodec_flush_buffers(s->audio_codec_ctx);
+				_frame_dbuffer_mark(&s->in_audio_buffer, s);
+				continue;
+			}
+			
 			ppkt = (r >= 0 ? &pkt : NULL);
 		}
 		
@@ -825,6 +956,14 @@ static void *_audio_scaler_thread(void *arg)
 	/* Fetch audio frames and pass them through the resampler */
 	while((frame = _frame_dbuffer_flip(&s->in_audio_buffer)) != NULL)
 	{
+		if(frame->opaque != NULL)
+		{
+			/* Seek marker: the target is now the current time */
+			s->audio_start_time = av_rescale_q(s->seek_target, AV_TIME_BASE_Q, s->audio_time_base);
+			av_frame_unref(frame);
+			continue;
+		}
+		
 		pts = frame->best_effort_timestamp;
 		drop = 0;
 		
@@ -987,6 +1126,20 @@ static int _ffmpeg_close(void *ctx)
 	cc608_fifo_free(&s->ccfifo);
 	
 	free(s);
+	
+	return(AV_OK);
+}
+
+int av_ffmpeg_seek(av_t *av, int seconds)
+{
+	av_ffmpeg_t *s = av->av_source_ctx;
+	
+	if(av->close != _ffmpeg_close) return(AV_ERROR);
+	
+	pthread_mutex_lock(&s->mutex);
+	s->seek_seconds += seconds;
+	pthread_cond_broadcast(&s->cond);
+	pthread_mutex_unlock(&s->mutex);
 	
 	return(AV_OK);
 }

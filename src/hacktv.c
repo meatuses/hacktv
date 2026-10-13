@@ -20,6 +20,10 @@
 #include <string.h>
 #include <getopt.h>
 #include <signal.h>
+#ifndef _WIN32
+#include <termios.h>
+#include <unistd.h>
+#endif
 #include "hacktv.h"
 #include "av.h"
 #include "rf.h"
@@ -32,6 +36,61 @@ static void _sigint_callback_handler(int signum)
 	_abort = 1;
 	_signal = signum;
 }
+
+#ifndef _WIN32
+static struct termios _tio;
+static int _tio_saved = 0;
+
+static void _tty_restore(void)
+{
+	if(_tio_saved) tcsetattr(STDIN_FILENO, TCSANOW, &_tio);
+}
+
+/* Put a foreground terminal on stdin into non-blocking raw mode, for seek keys */
+static int _tty_raw(void)
+{
+	struct termios t;
+	
+	if(_tio_saved) return(1);
+	
+	if(!isatty(STDIN_FILENO) || tcgetpgrp(STDIN_FILENO) != getpgrp() || tcgetattr(STDIN_FILENO, &_tio) < 0) return(0);
+	
+	t = _tio;
+	t.c_lflag &= ~(ICANON | ECHO);
+	t.c_cc[VMIN] = 0;
+	t.c_cc[VTIME] = 0;
+	tcsetattr(STDIN_FILENO, TCSANOW, &t);
+	
+	_tio_saved = 1;
+	atexit(_tty_restore);
+	
+	return(1);
+}
+
+/* Arrow keys: left/right = -/+10s, down/up = -/+60s */
+static int _tty_seek(void)
+{
+	char b[16];
+	int i, n, r = 0;
+	
+	n = read(STDIN_FILENO, b, sizeof(b));
+	
+	for(i = 0; i + 2 < n; i++)
+	{
+		if(b[i] != 0x1B || b[i + 1] != '[') continue;
+		
+		switch(b[i + 2])
+		{
+		case 'C': r += 10; break;
+		case 'D': r -= 10; break;
+		case 'A': r += 60; break;
+		case 'B': r -= 60; break;
+		}
+	}
+	
+	return(r);
+}
+#endif
 
 static void print_version(void)
 {
@@ -1564,6 +1623,11 @@ int main(int argc, char *argv[])
 			}
 		}
 		
+#ifndef _WIN32
+		int tty = _tty_raw();
+		unsigned nlines = 0;
+#endif
+		
 		for(c = optind; c < argc && !_abort; c++)
 		{
 			/* Get a pointer to the output prefix and target */
@@ -1604,6 +1668,15 @@ int main(int argc, char *argv[])
 				vid_line_t *line = vid_next_line(&s.vid);
 				
 				if(line == NULL) break;
+				
+#ifndef _WIN32
+				/* Poll the keyboard about 4 times a second */
+				if(tty && (++nlines & 0xFFF) == 0)
+				{
+					int seek = _tty_seek();
+					if(seek) av_ffmpeg_seek(&s.vid.av, seek);
+				}
+#endif
 				
 				if(rf_write(&s.rf, line->output, line->width) != RF_OK) break;
 				if(line->audio_len && rf_write_audio(&s.rf, line->audio, line->audio_len) != RF_OK) break;
