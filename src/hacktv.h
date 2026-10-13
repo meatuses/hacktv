@@ -48,6 +48,7 @@ typedef struct {
 	r64_t max_aspect;
 	int repeat;
 	int shuffle;
+	int hold;
 	int verbose;
 	char *teletext;
 	char *wss;

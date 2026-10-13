@@ -498,7 +498,7 @@ static AVFrame *_frame_dbuffer_flip(_frame_dbuffer_t *d)
 static void _input_seek(av_ffmpeg_t *s)
 {
 	AVStream *ref = s->video_stream ? s->video_stream : s->audio_stream;
-	int64_t pos, min, target;
+	int64_t pos, min, max, target;
 	int seconds;
 	
 	pthread_mutex_lock(&s->mutex);
@@ -512,6 +512,15 @@ static void _input_seek(av_ffmpeg_t *s)
 	
 	min = ref->start_time != AV_NOPTS_VALUE ? av_rescale_q(ref->start_time, ref->time_base, AV_TIME_BASE_Q) : 0;
 	target = pos + (int64_t) seconds * AV_TIME_BASE;
+	
+	/* Don't seek past the end, leave a couple of seconds to watch */
+	max = ref->duration != AV_NOPTS_VALUE ? av_rescale_q(ref->duration, ref->time_base, AV_TIME_BASE_Q) : s->format_ctx->duration;
+	if(max != AV_NOPTS_VALUE && max > 0)
+	{
+		max += min - 2 * AV_TIME_BASE;
+		if(target > max) target = max;
+	}
+	
 	if(target < min) target = min;
 	
 	/* ponytail: lands on the previous keyframe, the scalers then discard

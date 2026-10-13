@@ -53,23 +53,7 @@ static int _tty_raw(void)
 	
 	if(_tio_saved) return(1);
 	
-	if(!isatty(STDIN_FILENO))
-	{
-		fprintf(stderr, "Seek keys disabled: stdin is not a terminal\n");
-		return(0);
-	}
-	
-	if(tcgetpgrp(STDIN_FILENO) != getpgrp())
-	{
-		fprintf(stderr, "Seek keys disabled: not the foreground process group\n");
-		return(0);
-	}
-	
-	if(tcgetattr(STDIN_FILENO, &_tio) < 0)
-	{
-		perror("Seek keys disabled: tcgetattr");
-		return(0);
-	}
+	if(!isatty(STDIN_FILENO) || tcgetpgrp(STDIN_FILENO) != getpgrp() || tcgetattr(STDIN_FILENO, &_tio) < 0) return(0);
 	
 	t = _tio;
 	t.c_lflag &= ~(ICANON | ECHO);
@@ -135,6 +119,7 @@ static void print_usage(void)
 		"      --max-aspect <value>       Set the maximum aspect ratio for fit mode.\n"
 		"  -r, --repeat                   Repeat the inputs forever.\n"
 		"      --shuffle                  Randomly shuffle the inputs.\n"
+		"      --hold                     Keep transmitting blank video when the last input ends.\n"
 		"  -v, --verbose                  Enable verbose output.\n"
 		"      --teletext <path>          Enable teletext output. (625 line modes only)\n"
 		"      --wss <mode>               Enable WSS output. (625 line modes only)\n"
@@ -519,6 +504,7 @@ enum {
 	_OPT_LIST_MODES,
 	_OPT_JSON,
 	_OPT_SHUFFLE,
+	_OPT_HOLD,
 	_OPT_FIT,
 	_OPT_MIN_ASPECT,
 	_OPT_MAX_ASPECT,
@@ -550,6 +536,7 @@ int main(int argc, char *argv[])
 		{ "pillarbox",      no_argument,       0, _OPT_PILLARBOX },
 		{ "repeat",         no_argument,       0, 'r' },
 		{ "shuffle",        no_argument,       0, _OPT_SHUFFLE },
+		{ "hold",           no_argument,       0, _OPT_HOLD },
 		{ "verbose",        no_argument,       0, 'v' },
 		{ "teletext",       required_argument, 0, _OPT_TELETEXT },
 		{ "wss",            required_argument, 0, _OPT_WSS },
@@ -646,6 +633,7 @@ int main(int argc, char *argv[])
 	s.fit_mode = AV_FIT_STRETCH;
 	s.repeat = 0;
 	s.shuffle = 0;
+	s.hold = 0;
 	s.verbose = 0;
 	s.teletext = NULL;
 	s.wss = NULL;
@@ -841,6 +829,10 @@ int main(int argc, char *argv[])
 		
 		case 'r': /* -r, --repeat */
 			s.repeat = 1;
+			break;
+		
+		case _OPT_HOLD: /* --hold */
+			s.hold = 1;
 			break;
 		
 		case _OPT_SHUFFLE: /* --shuffle */
@@ -1661,6 +1653,9 @@ int main(int argc, char *argv[])
 			{
 				l = strlen(pre);
 			}
+			
+			/* Only the end of the final input is held */
+			s.vid.av.hold = s.hold && !s.repeat && c == argc - 1;
 			
 			if(strncmp(pre, "test", l) == 0)
 			{
