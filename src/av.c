@@ -83,8 +83,6 @@ int av_read_audio(av_t *s, int16_t **samples, size_t *nsamples)
 
 int av_eof(av_t *s)
 {
-	if(s->hold) return(0);
-	
 	return(s->read_video == NULL && s->read_audio == NULL ? 1 : 0);
 }
 

@@ -107,9 +107,6 @@ typedef struct {
 	/* Audio state */
 	unsigned int samples;
 	
-	/* Keep transmitting blank video after the source ends */
-	int hold;
-	
 	/* AV source data and callbacks */
 	void *av_source_ctx;
 	av_read_video_t read_video;

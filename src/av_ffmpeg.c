@@ -101,6 +101,7 @@ typedef struct {
 	AVCodecContext *video_codec_ctx;
 	_frame_dbuffer_t in_video_buffer;
 	int video_eof;
+	volatile int paused;	/* Freeze frame, silence */
 	
 	/* CC608 caption fifo */
 	cc608_fifo_t ccfifo;
@@ -850,7 +851,8 @@ static int _ffmpeg_read_video(void *ctx, av_frame_t *frame)
 		return(AV_EOF);
 	}
 	
-	avframe = _frame_dbuffer_flip(&s->out_video_buffer);
+	/* While paused, keep repeating the frame that was last returned */
+	avframe = s->paused ? s->out_video_buffer.frame[0] : _frame_dbuffer_flip(&s->out_video_buffer);
 	if(!avframe)
 	{
 		/* EOF or abort */
@@ -882,7 +884,7 @@ static int _ffmpeg_read_video(void *ctx, av_frame_t *frame)
 #endif
 	
 	/* Return CC608 code */
-	cc608_fifo_read(&s->ccfifo, frame->cc608, 2);
+	if(!s->paused) cc608_fifo_read(&s->ccfifo, frame->cc608, 2);
 	
 	/* Set the pointer to the framebuffer */
 	frame->width = avframe->width;
@@ -1075,6 +1077,14 @@ static int _ffmpeg_read_audio(void *ctx, int16_t **samples, size_t *nsamples)
 		return(AV_EOF);
 	}
 	
+	if(s->paused)
+	{
+		/* Silence while paused, the audio resumes where it stopped */
+		*samples = NULL;
+		*nsamples = 0;
+		return(AV_OK);
+	}
+	
 	frame = _frame_dbuffer_flip(&s->out_audio_buffer);
 	if(!frame)
 	{
@@ -1155,10 +1165,24 @@ int av_ffmpeg_seek(av_t *av, int seconds)
 	
 	if(av->close != _ffmpeg_close) return(AV_ERROR);
 	
+	/* Show the result of the seek */
+	s->paused = 0;
+	
 	pthread_mutex_lock(&s->mutex);
 	s->seek_seconds += seconds;
 	pthread_cond_broadcast(&s->cond);
 	pthread_mutex_unlock(&s->mutex);
+	
+	return(AV_OK);
+}
+
+int av_ffmpeg_pause(av_t *av)
+{
+	av_ffmpeg_t *s = av->av_source_ctx;
+	
+	if(av->close != _ffmpeg_close) return(AV_ERROR);
+	
+	s->paused = !s->paused;
 	
 	return(AV_OK);
 }

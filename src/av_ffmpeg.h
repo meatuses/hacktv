@@ -20,6 +20,7 @@
 
 extern int av_ffmpeg_open(av_t *av, char *input_url, char *format, char *options);
 extern int av_ffmpeg_seek(av_t *av, int seconds);
+extern int av_ffmpeg_pause(av_t *av);
 extern void av_ffmpeg_init(void);
 extern void av_ffmpeg_deinit(void);
 
