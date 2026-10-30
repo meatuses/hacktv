@@ -51,6 +51,10 @@
 /* Taken from ffplay.c */
 #define MAX_QUEUE_SIZE (15 * 1024 * 1024)
 
+/* Markers sent down the pipeline as a frame's opaque pointer */
+#define MARK_SEEK ((void *) 1)
+#define MARK_EOF  ((void *) 2)
+
 typedef struct __packet_queue_item_t {
 	
 	AVPacket pkt;
@@ -64,6 +68,7 @@ typedef struct {
 	int length;	/* Number of packets */
 	int size;       /* Number of bytes used */
 	int eof;        /* End of stream / file flag */
+	int eof_seen;   /* The reader has been told about the EOF */
 	int abort;      /* Abort flag */
 	
 	/* Pointers to the first and last packets in the queue */
@@ -177,6 +182,7 @@ static int _packet_queue_init(av_ffmpeg_t *s, _packet_queue_t *q)
 	q->length = 0;
 	q->size = 0;
 	q->eof = 0;
+	q->eof_seen = 0;
 	q->abort = 0;
 	
 	return(0);
@@ -200,8 +206,10 @@ static int _packet_queue_flush(av_ffmpeg_t *s, _packet_queue_t *q)
 	}
 	
 	q->size = 0;
+	q->eof = 0;
+	q->eof_seen = 0;
 	
-	pthread_cond_signal(&s->cond);
+	pthread_cond_broadcast(&s->cond);
 	pthread_mutex_unlock(&s->mutex);
 	
 	return(0);
@@ -218,7 +226,7 @@ static void _packet_queue_abort(av_ffmpeg_t *s, _packet_queue_t *q)
 	
 	q->abort = 1;
 	
-	pthread_cond_signal(&s->cond);
+	pthread_cond_broadcast(&s->cond);
 	pthread_mutex_unlock(&s->mutex);
 }
 
@@ -239,7 +247,7 @@ static int _packet_queue_write(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt
 		while(q->abort == 0 && s->seek_seconds == 0 && q->size + pkt->size + sizeof(_packet_queue_item_t) > MAX_QUEUE_SIZE)
 		{
 			s->input_stall = 1;
-			pthread_cond_signal(&s->cond);
+			pthread_cond_broadcast(&s->cond);
 			pthread_cond_wait(&s->cond, &s->mutex);
 		}
 		
@@ -250,7 +258,7 @@ static int _packet_queue_write(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt
 			/* Abort was called while waiting for the queue size to drop */
 			av_packet_unref(pkt);
 			
-			pthread_cond_signal(&s->cond);
+			pthread_cond_broadcast(&s->cond);
 			pthread_mutex_unlock(&s->mutex);
 			
 			return(-2);
@@ -261,7 +269,7 @@ static int _packet_queue_write(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt
 			/* A seek is pending, this packet is about to be flushed anyway */
 			av_packet_unref(pkt);
 			
-			pthread_cond_signal(&s->cond);
+			pthread_cond_broadcast(&s->cond);
 			pthread_mutex_unlock(&s->mutex);
 			
 			return(0);
@@ -274,7 +282,7 @@ static int _packet_queue_write(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt
 			/* Out of memory */
 			av_packet_unref(pkt);
 			
-			pthread_cond_signal(&s->cond);
+			pthread_cond_broadcast(&s->cond);
 			pthread_mutex_unlock(&s->mutex);
 			
 			return(-1);
@@ -299,7 +307,7 @@ static int _packet_queue_write(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt
 		q->size += pkt->size + sizeof(_packet_queue_item_t);
 	}
 	
-	pthread_cond_signal(&s->cond);
+	pthread_cond_broadcast(&s->cond);
 	pthread_mutex_unlock(&s->mutex);
 	
 	return(0);
@@ -323,7 +331,7 @@ static int _packet_queue_write_flush(av_ffmpeg_t *s, _packet_queue_t *q)
 	q->length++;
 	q->size += sizeof(_packet_queue_item_t);
 	
-	pthread_cond_signal(&s->cond);
+	pthread_cond_broadcast(&s->cond);
 	pthread_mutex_unlock(&s->mutex);
 	
 	return(0);
@@ -345,10 +353,18 @@ static int _packet_queue_read(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt)
 			return(0);
 		}
 		
-		if(q->abort == 1 || q->eof == 1)
+		if(q->abort == 1)
 		{
 			pthread_mutex_unlock(&s->mutex);
-			return(q->abort == 1 ? -2 : -1);
+			return(-2);
+		}
+		
+		if(q->eof == 1 && q->eof_seen == 0)
+		{
+			/* Report the EOF once, then wait for a seek or abort */
+			q->eof_seen = 1;
+			pthread_mutex_unlock(&s->mutex);
+			return(-1);
 		}
 		
 		pthread_cond_wait(&s->cond, &s->mutex);
@@ -365,7 +381,7 @@ static int _packet_queue_read(av_ffmpeg_t *s, _packet_queue_t *q, AVPacket *pkt)
 	
 	free(p);
 	
-	pthread_cond_signal(&s->cond);
+	pthread_cond_broadcast(&s->cond);
 	pthread_mutex_unlock(&s->mutex);
 	
 	return(r);
@@ -496,7 +512,7 @@ static AVFrame *_frame_dbuffer_flip(_frame_dbuffer_t *d)
 	return(frame);
 }
 
-static void _input_seek(av_ffmpeg_t *s)
+static int _input_seek(av_ffmpeg_t *s)
 {
 	AVStream *ref = s->video_stream ? s->video_stream : s->audio_stream;
 	int64_t pos, min, max, target;
@@ -529,7 +545,7 @@ static void _input_seek(av_ffmpeg_t *s)
 	if(av_seek_frame(s->format_ctx, ref->index, av_rescale_q(target, AV_TIME_BASE_Q, ref->time_base), AVSEEK_FLAG_BACKWARD) < 0)
 	{
 		/* Not seekable */
-		return;
+		return(0);
 	}
 	
 	s->seek_target = target;
@@ -545,13 +561,15 @@ static void _input_seek(av_ffmpeg_t *s)
 		_packet_queue_flush(s, &s->audio_queue);
 		_packet_queue_write_flush(s, &s->audio_queue);
 	}
+	
+	return(1);
 }
 
 static void *_input_thread(void *arg)
 {
 	av_ffmpeg_t *s = (av_ffmpeg_t *) arg;
 	AVPacket pkt;
-	int r;
+	int r, eof_sent = 0;
 	
 	//fprintf(stderr, "_input_thread(): Starting\n");
 	
@@ -560,7 +578,7 @@ static void *_input_thread(void *arg)
 	{
 		if(s->seek_seconds != 0)
 		{
-			_input_seek(s);
+			if(_input_seek(s)) eof_sent = 0;
 			continue;
 		}
 		
@@ -574,17 +592,17 @@ static void *_input_thread(void *arg)
 		else if(r < 0)
 		{
 			/* FFmpeg input EOF or error. The input is read well ahead of
-			 * playback, so wait for the decoders to consume the queues and
-			 * keep serving seeks until then */
-			if(s->seek_seconds == 0 && (s->video_queue.length > 0 || s->audio_queue.length > 0))
+			 * playback, so tell the queues once and then keep serving
+			 * seeks until aborted */
+			if(!eof_sent)
 			{
-				av_usleep(10000);
-				continue;
+				if(s->video_stream) _packet_queue_write(s, &s->video_queue, NULL);
+				if(s->audio_stream) _packet_queue_write(s, &s->audio_queue, NULL);
+				eof_sent = 1;
 			}
 			
-			if(s->seek_seconds != 0) continue;
-			
-			break;
+			av_usleep(10000);
+			continue;
 		}
 		
 		if(s->video_stream && pkt.stream_index == s->video_stream->index)
@@ -637,7 +655,24 @@ static void *_video_decode_thread(void *arg)
 			{
 				/* Seek: drop decoder state and tell the scaler */
 				avcodec_flush_buffers(s->video_codec_ctx);
-				_frame_dbuffer_mark(&s->in_video_buffer, s);
+				_frame_dbuffer_mark(&s->in_video_buffer, MARK_SEEK);
+				continue;
+			}
+			
+			if(r == -1)
+			{
+				/* End of input: drain the decoder and tell the scaler.
+				 * The thread stays alive in case of a seek */
+				avcodec_send_packet(s->video_codec_ctx, NULL);
+				
+				while(avcodec_receive_frame(s->video_codec_ctx, frame) == 0)
+				{
+					av_frame_ref(_frame_dbuffer_back_buffer(&s->in_video_buffer), frame);
+					_frame_dbuffer_ready(&s->in_video_buffer, 0);
+				}
+				
+				avcodec_flush_buffers(s->video_codec_ctx);
+				_frame_dbuffer_mark(&s->in_video_buffer, MARK_EOF);
 				continue;
 			}
 			
@@ -696,6 +731,13 @@ static void *_video_scaler_thread(void *arg)
 	/* Fetch video frames and pass them through the scaler */
 	while((frame = _frame_dbuffer_flip(&s->in_video_buffer)) != NULL)
 	{
+		if(frame->opaque == MARK_EOF)
+		{
+			/* All frames have been passed on, end the stream */
+			av_frame_unref(frame);
+			break;
+		}
+		
 		if(frame->opaque != NULL)
 		{
 			/* Seek marker: the target is now the current time */
@@ -925,7 +967,24 @@ static void *_audio_decode_thread(void *arg)
 			{
 				/* Seek: drop decoder state and tell the scaler */
 				avcodec_flush_buffers(s->audio_codec_ctx);
-				_frame_dbuffer_mark(&s->in_audio_buffer, s);
+				_frame_dbuffer_mark(&s->in_audio_buffer, MARK_SEEK);
+				continue;
+			}
+			
+			if(r == -1)
+			{
+				/* End of input: drain the decoder and tell the scaler.
+				 * The thread stays alive in case of a seek */
+				avcodec_send_packet(s->audio_codec_ctx, NULL);
+				
+				while(avcodec_receive_frame(s->audio_codec_ctx, frame) == 0)
+				{
+					av_frame_ref(_frame_dbuffer_back_buffer(&s->in_audio_buffer), frame);
+					_frame_dbuffer_ready(&s->in_audio_buffer, 0);
+				}
+				
+				avcodec_flush_buffers(s->audio_codec_ctx);
+				_frame_dbuffer_mark(&s->in_audio_buffer, MARK_EOF);
 				continue;
 			}
 			
@@ -977,6 +1036,13 @@ static void *_audio_scaler_thread(void *arg)
 	/* Fetch audio frames and pass them through the resampler */
 	while((frame = _frame_dbuffer_flip(&s->in_audio_buffer)) != NULL)
 	{
+		if(frame->opaque == MARK_EOF)
+		{
+			/* All frames have been passed on, end the stream */
+			av_frame_unref(frame);
+			break;
+		}
+		
 		if(frame->opaque != NULL)
 		{
 			/* Seek marker: the target is now the current time */
